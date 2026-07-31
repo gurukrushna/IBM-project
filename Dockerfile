@@ -14,8 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /
 # Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-# Copy backend and frontend code into container
-# Copy backend and frontend code into container
+
+# Copy backend file and frontend directory into container
 COPY backend.py ./
 COPY frontend/ ./frontend/
 
