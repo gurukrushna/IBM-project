@@ -20,9 +20,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client using the environment key
-openai_api_key = os.getenv("OPENAI_API_KEY")
-client = OpenAI(api_key=openai_api_key) if openai_api_key else None
+# Initialize OpenAI client pointed to Groq's FREE API endpoint
+groq_api_key = os.getenv("GROQ_API_KEY")
+client = OpenAI(
+    base_url="https://api.groq.com/openai/v1",
+    api_key=groq_api_key or "dummy_key"
+)
 
 
 class RecommendationRequest(BaseModel):
@@ -34,20 +37,17 @@ class RecommendationRequest(BaseModel):
 
 @app.get("/")
 async def serve_index():
-    """Serves index.html at root route"""
     index_path = os.path.join("frontend", "index.html")
     if os.path.exists(index_path):
         return FileResponse(index_path)
     return {"status": "CineMind API is online"}
 
 
-# Mount frontend static directory if present
 if os.path.exists("frontend"):
     app.mount("/static", StaticFiles(directory="frontend"), name="static")
 
 
 def fetch_tvmaze_details(title: str):
-    """Fetch movie/show poster and cast list from free TVMaze API"""
     try:
         url = f"https://api.tvmaze.com/singlesearch/shows?q={title}&embed=cast"
         res = requests.get(url, timeout=4)
@@ -59,16 +59,15 @@ def fetch_tvmaze_details(title: str):
                 cast_list = [member["person"]["name"] for member in data["_embedded"]["cast"][:3]]
             return image, cast_list
     except Exception as e:
-        print(f"TVMaze search skipped for '{title}': {e}")
+        print(f"TVMaze lookup skipped for '{title}': {e}")
     return None, []
 
 
 @app.post("/api/recommend")
 async def get_recommendations(req: RecommendationRequest):
     try:
-        # Check if API Key is available on Render
-        if not os.getenv("OPENAI_API_KEY"):
-            raise ValueError("OPENAI_API_KEY is not set in Render environment variables!")
+        if not os.getenv("GROQ_API_KEY"):
+            raise ValueError("GROQ_API_KEY is missing in Render environment variables!")
 
         prompt = f"""
         You are an expert movie and TV show recommendation system.
@@ -79,14 +78,14 @@ async def get_recommendations(req: RecommendationRequest):
         - Number of Recommendations: {req.count}
 
         Respond ONLY with a raw JSON array containing exactly {req.count} objects.
-        Do NOT wrap the response in markdown or backticks (e.g. no ```json).
+        Do NOT wrap the response in markdown or backticks (no ```json).
         Each object must have these exact keys:
         "title", "type", "year", "genre", "reason"
         """
 
-        # Call OpenAI API (using modern gpt-4o-mini or gpt-3.5-turbo)
+        # Call Groq using Llama 3.1 model (100% free)
         response = client.chat.completions.create(
-            model="gpt-4o-mini",
+            model="llama-3.1-8b-instant",
             messages=[
                 {"role": "system", "content": "You are a helpful AI that outputs strictly valid JSON arrays."},
                 {"role": "user", "content": prompt}
@@ -96,17 +95,15 @@ async def get_recommendations(req: RecommendationRequest):
 
         raw_content = response.choices[0].message.content.strip()
 
-        # Sanitize potential markdown block formatting from GPT
+        # Clean potential markdown formatting
         if raw_content.startswith("```"):
             raw_content = raw_content.split("\n", 1)[-1]
         if raw_content.endswith("```"):
             raw_content = raw_content.rsplit("\n", 1)[0]
         raw_content = raw_content.strip()
 
-        # Parse JSON output
         recommendations = json.loads(raw_content)
 
-        # Enrich recommendations with TVMaze posters & cast
         enriched = []
         for item in recommendations:
             title = item.get("title", "")
@@ -118,11 +115,8 @@ async def get_recommendations(req: RecommendationRequest):
         return {"recommendations": enriched}
 
     except Exception as e:
-        # Print full stack trace to Render terminal logs
         print("=" * 60)
-        print("EXACT BACKEND ERROR ENCOUNTERED:")
+        print("BACKEND ERROR:")
         traceback.print_exc()
         print("=" * 60)
-        
-        # Return the actual error message to the browser popup
         raise HTTPException(status_code=500, detail=str(e))
