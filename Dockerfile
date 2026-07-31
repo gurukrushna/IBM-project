@@ -14,13 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /
 # Install Python requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-
 # Copy backend and frontend code into container
-COPY backend/ ./backend/
+# Copy backend and frontend code into container
+COPY backend.py ./
 COPY frontend/ ./frontend/
 
 # Expose port 8080 for web traffic
 EXPOSE 8080
 
-# Run Uvicorn server bound to 0.0.0.0 on port 8080
-CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8080"]
+# Run Uvicorn server referencing backend.py
+CMD ["uvicorn", "backend:app", "--host", "0.0.0.0", "--port", "8080"]
