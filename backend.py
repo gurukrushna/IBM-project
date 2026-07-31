@@ -20,7 +20,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OpenAI client pointed to Groq's FREE API endpoint
+# Initialize Groq client via OpenAI-compatible endpoint
 groq_api_key = os.getenv("GROQ_API_KEY")
 client = OpenAI(
     base_url="https://api.groq.com/openai/v1",
@@ -83,7 +83,6 @@ async def get_recommendations(req: RecommendationRequest):
         "title", "type", "year", "genre", "reason"
         """
 
-        # Call Groq using Llama 3.1 model (100% free)
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
@@ -95,24 +94,36 @@ async def get_recommendations(req: RecommendationRequest):
 
         raw_content = response.choices[0].message.content.strip()
 
-        # Clean potential markdown formatting
+        # Clean potential markdown block wrappers
         if raw_content.startswith("```"):
             raw_content = raw_content.split("\n", 1)[-1]
         if raw_content.endswith("```"):
             raw_content = raw_content.rsplit("\n", 1)[0]
         raw_content = raw_content.strip()
 
-        recommendations = json.loads(raw_content)
+        parsed = json.loads(raw_content)
+
+        # Ensure we always extract a list even if Llama wraps it in an object key
+        recommendations_list = []
+        if isinstance(parsed, list):
+            recommendations_list = parsed
+        elif isinstance(parsed, dict):
+            for val in parsed.values():
+                if isinstance(val, list):
+                    recommendations_list = val
+                    break
 
         enriched = []
-        for item in recommendations:
-            title = item.get("title", "")
-            poster, cast = fetch_tvmaze_details(title)
-            item["poster"] = poster
-            item["cast"] = cast
-            enriched.append(item)
+        for item in recommendations_list:
+            if isinstance(item, dict):
+                title = item.get("title", "")
+                poster, cast = fetch_tvmaze_details(title)
+                item["poster"] = poster
+                item["cast"] = cast
+                enriched.append(item)
 
-        return {"recommendations": enriched}
+        # Return list directly so frontend .map() works smoothly
+        return enriched
 
     except Exception as e:
         print("=" * 60)
