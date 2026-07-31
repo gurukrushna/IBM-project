@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>CineMind AI - Powered by TVMaze</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: { 500: '#6366f1', 600: '#4f46e5', 700: '#4338ca' }
+          }
+        }
+      }
+    }
+  </script>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col font-sans antialiased">
+
+  <!-- Header -->
+  <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50">
+    <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="p-2 bg-brand-600 rounded-xl shadow-lg shadow-brand-500/20">🍿</div>
+        <h1 class="text-xl font-bold bg-gradient-to-r from-indigo-400 to-purple-400 bg-clip-text text-transparent">
+          CineMind AI
+        </h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-xs px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-medium">
+          TVMaze API (No Key Needed)
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-6xl mx-auto px-4 py-8 flex-1 w-full grid grid-cols-1 lg:grid-cols-12 gap-8">
+    
+    <!-- User Input Panel -->
+    <section class="lg:col-span-4 bg-slate-900/60 border border-slate-800 p-6 rounded-2xl h-fit shadow-xl">
+      <h2 class="text-lg font-semibold mb-4 text-white flex items-center gap-2">
+        <span>🎬</span> Preferences
+      </h2>
+
+      <form id="recommendForm" onsubmit="handleRecommend(event)" class="space-y-4">
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Favorite Movies or Shows</label>
+          <input type="text" id="favorite_movies" placeholder="e.g. Severance, Stranger Things, Dark" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition" required/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Genres</label>
+          <input type="text" id="genres" placeholder="e.g. Sci-Fi, Mystery, Thriller" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3.5 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition"/>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Current Mood</label>
+          <select id="mood" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition">
+            <option value="Mind-bending & Atmospheric">Mind-bending & Atmospheric</option>
+            <option value="Dark & Gripping">Dark & Gripping</option>
+            <option value="Cozy & Uplifting">Cozy & Uplifting</option>
+            <option value="Fast-paced & Action-packed">Fast-paced Action</option>
+          </select>
+        </div>
+
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1">Number of Suggestions</label>
+          <select id="count" class="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm text-slate-200 focus:outline-none focus:border-brand-500 transition">
+            <option value="4" selected>4 Suggestions</option>
+            <option value="6">6 Suggestions</option>
+          </select>
+        </div>
+
+        <button type="submit" id="submitBtn" class="w-full py-2.5 bg-brand-600 hover:bg-brand-500 font-semibold text-sm rounded-lg shadow-lg shadow-brand-600/30 transition flex items-center justify-center gap-2 text-white">
+          <span>✨</span> Get Recommendations
+        </button>
+      </form>
+    </section>
+
+    <!-- Results Panel -->
+    <section class="lg:col-span-8 flex flex-col justify-start">
+      <div id="resultsContainer">
+        <!-- Empty State -->
+        <div id="emptyState" class="border border-dashed border-slate-800 rounded-2xl p-12 text-center text-slate-500 my-auto">
+          <p class="text-4xl mb-3">🎥</p>
+          <p class="text-sm font-medium">Enter your favorite titles on the left to generate recommendations with live TVMaze poster metadata.</p>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" class="hidden text-center py-20">
+          <div class="inline-block animate-spin rounded-full h-10 w-10 border-4 border-brand-500 border-t-transparent mb-4"></div>
+          <p class="text-sm text-slate-400">Consulting AI & fetching posters/cast from TVMaze...</p>
+        </div>
+
+        <!-- Grid Cards -->
+        <div id="movieGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 hidden"></div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // --- TVMaze API Integration Helper ---
+    async function fetchTVMazeData(title) {
+      try {
+        const url = `https://api.tvmaze.com/singlesearch/shows?q=${encodeURIComponent(title)}&embed=cast`;
+        const res = await fetch(url);
+        
+        if (!res.ok) return null;
+        const data = await res.json();
+
+        return {
+          poster: data.image?.medium || data.image?.original || null,
+          rating: data.rating?.average ? `⭐ ${data.rating.average}/10` : null,
+          premiered: data.premiered ? data.premiered.split('-')[0] : null,
+          officialUrl: data.url || `https://www.google.com/search?q=${encodeURIComponent(title)}`,
+          genres: data.genres || [],
+          cast: (data._embedded?.cast || []).slice(0, 3).map(c => ({
+            name: c.person.name,
+            character: c.character?.name || 'Cast',
+            profilePic: c.person.image?.medium || null
+          }))
+        };
+      } catch (err) {
+        console.warn(`TVMaze search skipped for "${title}":`, err);
+        return null;
+      }
+    }
+
+    async function handleRecommend(e) {
+      e.preventDefault();
+
+      const favs = document.getElementById('favorite_movies').value;
+      const genres = document.getElementById('genres').value;
+      const mood = document.getElementById('mood').value;
+      const count = document.getElementById('count').value;
+
+      document.getElementById('emptyState').classList.add('hidden');
+      document.getElementById('movieGrid').classList.add('hidden');
+      document.getElementById('loader').classList.remove('hidden');
+      document.getElementById('submitBtn').disabled = true;
+
+      try {
+        // Send request to backend
+        const res = await fetch('/api/recommend', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            favorite_movies: favs,
+            genres: genres,
+            mood: mood,
+            count: parseInt(count)
+          })
+        });
+
+        if (!res.ok) throw new Error("Failed to get response from server");
+        const rawRecommendations = await res.json();
+
+        // Hydrate each recommendation with TVMaze Metadata in parallel
+        const enrichedRecommendations = await Promise.all(
+          rawRecommendations.map(async (item) => {
+            const tvmaze = await fetchTVMazeData(item.title);
+            return { ...item, tvmaze };
+          })
+        );
+
+        renderCards(enrichedRecommendations);
+      } catch (err) {
+        alert("Error: " + err.message);
+        document.getElementById('emptyState').classList.remove('hidden');
+      } finally {
+        document.getElementById('loader').classList.add('hidden');
+        document.getElementById('submitBtn').disabled = false;
+      }
+    }
+
+    function renderCards(items) {
+      const grid = document.getElementById('movieGrid');
+      grid.innerHTML = '';
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = "bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden flex flex-col shadow-xl";
+
+        const posterUrl = item.tvmaze?.poster || "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=500&auto=format&fit=crop&q=60";
+        const yearDisplay = item.tvmaze?.premiered || item.year || 'N/A';
+        const ratingDisplay = item.tvmaze?.rating || '';
+
+        card.innerHTML = `
+          <!-- Poster & Top Banner -->
+          <div class="relative h-60 bg-slate-950 overflow-hidden">
+            <img src="${posterUrl}" alt="${item.title}" class="w-full h-full object-cover object-center opacity-90 hover:scale-105 transition duration-500">
+            <div class="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/40 to-transparent"></div>
+            
+            <div class="absolute top-3 right-3">
+              <span class="bg-brand-600/90 backdrop-blur text-white text-xs font-bold px-2.5 py-1 rounded-full shadow">
+                ${item.matchScore || 95}% Match
+              </span>
+            </div>
+
+            <div class="absolute bottom-3 left-4 right-4">
+              <h3 class="text-lg font-bold text-white drop-shadow">${item.title}</h3>
+              <p class="text-xs text-slate-300 font-medium">${yearDisplay} • ${item.genre} ${ratingDisplay ? '• ' + ratingDisplay : ''}</p>
+            </div>
+          </div>
+
+          <!-- Body Content -->
+          <div class="p-4 flex-1 flex flex-col justify-between space-y-4">
+            <p class="text-xs text-slate-300 leading-relaxed">
+              ${item.reason}
+            </p>
+
+            <!-- Cast Section (From TVMaze) -->
+            ${item.tvmaze?.cast?.length ? `
+              <div>
+                <p class="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Cast (TVMaze)</p>
+                <div class="flex items-center gap-2">
+                  ${item.tvmaze.cast.map(c => `
+                    <div class="flex items-center gap-1.5 bg-slate-950/80 p-1 rounded-lg border border-slate-800 flex-1 min-w-0">
+                      <img src="${c.profilePic || 'https://via.placeholder.com/80?text=?'}" class="w-6 h-6 rounded-full object-cover bg-slate-800 shrink-0"/>
+                      <div class="truncate">
+                        <p class="text-[10px] font-medium text-slate-200 truncate">${c.name}</p>
+                        <p class="text-[8px] text-slate-400 truncate">${c.character}</p>
+                      </div>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
+            <!-- External Action Buttons -->
+            <div class="pt-2 border-t border-slate-800/80 flex gap-2">
+              <a href="${item.tvmaze?.officialUrl || '#'}" target="_blank" class="flex-1 text-center py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition">
+                📺 Show Page
+              </a>
+              <a href="https://www.youtube.com/results?search_query=${encodeURIComponent(item.title + ' trailer')}" target="_blank" class="flex-1 text-center py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg text-xs font-medium transition">
+                ▶ Trailer
+              </a>
+            </div>
+          </div>
+        `;
+        grid.appendChild(card);
+      });
+
+      grid.classList.remove('hidden');
+    }
+  </script>
+</body>
+</html>
